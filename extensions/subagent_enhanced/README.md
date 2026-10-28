@@ -20,7 +20,17 @@ No external execution providers (Codex, Claude Code, ACP, etc.) are used.
 
 ## Installation
 
-Symlink the extension and sample resources from the repository root:
+From the repository root, run the installer:
+
+```bash
+packages/coding-agent/examples/extensions/subagent_enhanced/install.sh
+```
+
+It links the extension, sample agents, and workflow prompts into `~/.pi/agent/`, backing up conflicting files with a timestamped suffix. Use `--copy` for independent copies, or set `PI_AGENT_DIR` to install somewhere else.
+
+Then run `/reload` in an active Pi session, or restart Pi, and verify with `/subagents`.
+
+Alternatively, symlink everything manually from the repository root:
 
 ```bash
 mkdir -p ~/.pi/agent/extensions/subagent_enhanced
@@ -41,6 +51,14 @@ done
 ```
 
 Run `/reload` after installation. The extension auto-discovers from the subdirectory's `index.ts`.
+
+## Uninstallation
+
+```bash
+packages/coding-agent/examples/extensions/subagent_enhanced/uninstall.sh
+```
+
+The uninstaller removes only symlinks or unchanged copies created by the installer. Modified or unrelated files are skipped. When an installation replaced an existing file, uninstalling restores the latest timestamped backup. Set `PI_AGENT_DIR` to target a different agent directory, then run `/reload` or restart Pi.
 
 ## Model tools
 
