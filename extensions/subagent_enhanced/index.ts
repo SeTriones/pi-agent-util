@@ -59,7 +59,7 @@ export default function (pi: ExtensionAPI) {
 			const snapshot = requireManager().snapshot();
 			statusCtx.ui.setStatus(
 				"subagent-enhanced",
-				snapshot.total > 0 ? `subagents: ${snapshot.running} running / ${snapshot.total}` : undefined,
+				snapshot.running > 0 ? `subagents: ${snapshot.running} running / ${snapshot.total}` : undefined,
 			);
 		};
 		removeManagerListener?.();

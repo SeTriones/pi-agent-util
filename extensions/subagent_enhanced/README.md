@@ -112,7 +112,9 @@ The manager opens a live catalog with status, label, model, duration, and usage.
 - Send a follow-up, choosing steer or follow-up delivery when it is running.
 - Stop its current work.
 
-The footer shows `subagents: N running / M total`. UI browsing does not add model tokens; only actual messages and settlement notices enter model context. The manager requires TUI mode, while model tools also work in print, JSON, and RPC modes.
+The footer shows `subagents: N running / M total` only while children are active and clears when the running count reaches zero. UI browsing does not add model tokens; only actual messages and settlement notices enter model context. The manager requires TUI mode, while model tools also work in print, JSON, and RPC modes.
+
+Labels and latest-activity previews occupy a single terminal row. The transcript viewer preserves message and error line breaks as separate scrollable rows and adjusts its page size to the terminal height.
 
 ## Agent definitions
 
@@ -167,6 +169,15 @@ These workflows wait for settlement notices and pass results explicitly; they do
 - Cross-process activation, durable parent mailboxes, and structured-output capture are out of scope.
 
 ## Tests
+
+Run the UI regression tests from this repository's root, using a Pi installation's host dependencies:
+
+```bash
+PI_PACKAGE_DIR="$HOME/.pi/agent/install/releases/$(cat "$HOME/.pi/agent/install/current-version")" \
+  node --test extensions/subagent_enhanced/test/run-ui-tests.mjs
+```
+
+`PI_PACKAGE_DIR` can also point to a Pi source checkout with installed dependencies. These tests cover multiline previews, selection redraws, live updates, bounded catalogs, transcript scrolling, and narrow/resized terminals without model calls.
 
 From `packages/coding-agent/`:
 
