@@ -12,14 +12,27 @@ function record(rootId: string, index: number, parentId = rootId, depth = 1): Su
 		mode: "spawn",
 		depth,
 		cwd: "/tmp",
-		agent: { name: "worker", description: "Test worker", systemPrompt: "Work", source: "user", filePath: "/tmp/worker.md" },
+		agent: {
+			name: "worker",
+			description: "Test worker",
+			systemPrompt: "Work",
+			source: "user",
+			filePath: "/tmp/worker.md",
+		},
 		model: { provider: "faux", id: "model" },
 		status: "running",
 		activation: 1,
 		createdAt: Date.now() - 10000,
 		updatedAt: Date.now(),
 		startedAt: Date.now() - 9000,
-		usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, total: 15, cost: 0.01 },
+		usage: {
+			input: 10,
+			output: 5,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 15,
+			cost: 0.01,
+		},
 	};
 }
 
