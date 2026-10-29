@@ -1,5 +1,5 @@
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { type ExtensionCommandContext, getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import { type SelectItem, SelectList, truncateToWidth } from "@earendil-works/pi-tui";
 import type { SubagentManager } from "./manager.ts";
 import { formatDuration, formatTokens, formatUsage, messageText, statusGlyph } from "./render.ts";
 import type { SubagentRecord } from "./types.ts";
@@ -116,93 +116,89 @@ export async function openSubagentManager(manager: SubagentManager, ctx: Extensi
 		return;
 	}
 	const expanded = new Set<string>();
-	let selectedIndex = 0;
 	while (true) {
-		let rows = visibleRows(manager, expanded);
-		if (rows.length === 0) {
+		if (visibleRows(manager, expanded).length === 0) {
 			ctx.ui.notify("No subagents in this session", "info");
 			return;
 		}
-		selectedIndex = Math.min(selectedIndex, Math.max(0, rows.length - 1));
-		const unsubscribe = manager.subscribe(() => {
-			rows = visibleRows(manager, expanded);
-		});
 		const selected = await ctx.ui.custom<SubagentRecord | undefined>((tui, theme, keybindings, done) => {
-			let cachedWidth: number | undefined;
-			let cachedLines: string[] | undefined;
-			const invalidate = () => {
-				cachedWidth = undefined;
-				cachedLines = undefined;
+			let rows = visibleRows(manager, expanded);
+			let selectedId = rows[0]?.record.id;
+			let list: SelectList;
+
+			const rebuild = () => {
+				rows = visibleRows(manager, expanded);
+				if (!rows.some((row) => row.record.id === selectedId)) selectedId = rows[0]?.record.id;
+				const items: SelectItem[] = rows.map(({ record, depth }) => {
+					const usage = formatUsage(record.usage);
+					const metrics = [
+						record.model ? `${record.model.provider}/${record.model.id}` : record.agent.name,
+						formatDuration(record),
+						usage,
+					]
+						.filter(Boolean)
+						.join(" · ");
+					return {
+						value: record.id,
+						label: `${"  ".repeat(depth - 1)}${statusGlyph(record)} ${record.label}`,
+						description: `${record.id} · ${record.status} · ${metrics}`,
+					};
+				});
+				const maxVisible = Math.max(1, Math.min(10, tui.terminal.rows - 12));
+				list = new SelectList(items, maxVisible, getSelectListTheme());
+				if (selectedId) {
+					list.setSelectedIndex(Math.max(0, rows.findIndex((row) => row.record.id === selectedId)));
+				}
+				list.onSelectionChange = (item) => {
+					selectedId = item.value;
+				};
+				list.onSelect = (item) => {
+					done(rows.find((row) => row.record.id === item.value)?.record);
+				};
+				list.onCancel = () => done(undefined);
 			};
-			const refresh = () => {
-				invalidate();
+			rebuild();
+			const unsubscribeRender = manager.subscribe(() => {
+				rebuild();
 				tui.requestRender();
-			};
-			const unsubscribeRender = manager.subscribe(refresh);
+			});
 			return {
 				render(width: number): string[] {
-					if (cachedLines && cachedWidth === width) return cachedLines;
 					const snapshot = manager.snapshot();
-					const output = [
+					const lines = [
 						theme.fg("accent", theme.bold("Subagents")) +
 							theme.fg("muted", ` · ${snapshot.running} running / ${snapshot.total} total`),
 						"",
+						...list.render(width),
 					];
-					for (const [index, row] of rows.entries()) {
-						const { record, depth } = row;
-						const selectedPrefix = index === selectedIndex ? "> " : "  ";
-						const indent = "  ".repeat(depth - 1);
-						const usage = formatUsage(record.usage);
-						const metrics = [
-							record.model ? `${record.model.provider}/${record.model.id}` : record.agent.name,
-							formatDuration(record),
-							usage,
-						]
-							.filter(Boolean)
-							.join(" · ");
-						output.push(
-							`${selectedPrefix}${indent}${statusGlyph(record)} ${record.label}`,
-							`${selectedPrefix}${indent}  ${theme.fg("dim", `${record.id} · ${record.status} · ${metrics}`)}`,
-						);
-					}
-					if (rows.length > 0) {
-						const current = rows[Math.min(selectedIndex, rows.length - 1)].record;
-						output.push(
+					const current = rows.find((row) => row.record.id === selectedId)?.record;
+					if (current) {
+						lines.push(
 							"",
 							theme.fg("dim", `Latest: ${manager.activity(current.id) ?? current.agent.description}`),
 						);
 					}
-					output.push("", theme.fg("dim", "up/down select · enter actions · escape close"));
-					cachedWidth = width;
-					cachedLines = output.map((line) => truncateToWidth(line, width));
-					return cachedLines;
+					lines.push("", theme.fg("dim", "up/down select · enter actions · escape close"));
+					return lines.map((line) => truncateToWidth(line, width));
 				},
 				handleInput(data: string): void {
-					if (keybindings.matches(data, "tui.select.cancel")) {
-						unsubscribeRender();
-						done(undefined);
-						return;
-					}
-					if (keybindings.matches(data, "tui.select.confirm")) {
-						unsubscribeRender();
-						done(rows[selectedIndex]?.record);
-						return;
-					}
-					if (keybindings.matches(data, "tui.select.up")) {
-						selectedIndex = (selectedIndex - 1 + rows.length) % rows.length;
-					} else if (keybindings.matches(data, "tui.select.down")) {
-						selectedIndex = (selectedIndex + 1) % rows.length;
-					} else if (keybindings.matches(data, "tui.select.pageUp")) {
-						selectedIndex = Math.max(0, selectedIndex - 10);
+					if (keybindings.matches(data, "tui.select.pageUp")) {
+						list.setSelectedIndex(Math.max(0, rows.findIndex((row) => row.record.id === selectedId) - 10));
 					} else if (keybindings.matches(data, "tui.select.pageDown")) {
-						selectedIndex = Math.min(rows.length - 1, selectedIndex + 10);
-					} else return;
-					refresh();
+						list.setSelectedIndex(
+							Math.min(rows.length - 1, rows.findIndex((row) => row.record.id === selectedId) + 10),
+						);
+					} else {
+						list.handleInput(data);
+					}
+					const current = list.getSelectedItem();
+					if (current) selectedId = current.value;
+					tui.requestRender();
 				},
-				invalidate,
+				invalidate: rebuild,
+				dispose: unsubscribeRender,
 			};
 		});
-		unsubscribe();
 		if (!selected) return;
 		await showActions(manager, selected, expanded, ctx);
 	}
