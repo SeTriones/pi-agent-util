@@ -51,7 +51,7 @@ export function lastActivity(messages: AgentMessage[]): string {
 		if (message.role === "assistant") {
 			for (let partIndex = message.content.length - 1; partIndex >= 0; partIndex--) {
 				const part = message.content[partIndex];
-				if (part.type === "text" && part.text.trim()) return part.text.trim().split("\n")[0];
+				if (part.type === "text" && part.text.trim()) return part.text.trim();
 				if (part.type === "toolCall") return `→ ${part.name}`;
 			}
 		}
@@ -61,7 +61,7 @@ export function lastActivity(messages: AgentMessage[]): string {
 				typeof message.content === "string"
 					? message.content
 					: message.content.find((part) => part.type === "text")?.text;
-			if (text) return text.trim().split("\n")[0];
+			if (text) return text.trim();
 		}
 	}
 	return "(no activity)";

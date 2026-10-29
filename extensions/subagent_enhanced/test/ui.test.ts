@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { type ExtensionCommandContext, initTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, getKeybindings, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { SubagentManager } from "../manager.ts";
+import { lastActivity } from "../render.ts";
 import { emptyUsage, type SubagentRecord } from "../types.ts";
 import { openSubagentManager } from "../ui.ts";
 
@@ -137,7 +138,7 @@ function rendered(component: Component, width: number): string[] {
 	return lines.map(stripTerminalSequences);
 }
 
-test("completed multiline output stays in one row across selection changes and live updates", async () => {
+test("multiline previews preserve line breaks across selection changes and live updates", async () => {
 	const records = [record(1), record(2)];
 	records[0].finalOutput = "## Completed\r\nFound files\n\n## Files Changed\n- result.txt";
 	records[1].agent.description = "General-purpose\rworker\nwith tools\tavailable";
@@ -146,10 +147,16 @@ test("completed multiline output stays in one row across selection changes and l
 	const ui = harness();
 	const closed = openSubagentManager(manager, ui.ctx);
 	const component = await ui.dialog();
+	const initial = rendered(component, 161);
+	assert.ok(initial.includes("## Completed"));
+	assert.ok(initial.includes("Found files"));
+	assert.equal(initial[initial.indexOf("Found files") + 1], "");
+	assert.ok(initial.includes("## Files Changed"));
+	assert.ok(initial.includes("- result.txt"));
 	for (let index = 0; index < 20; index++) {
 		for (const width of [161, 80, 24]) {
 			const lines = rendered(component, width);
-			assert.equal(lines.length, 8);
+			assert.ok(lines.length <= 16, "the preview must stay bounded as output grows");
 			assert.equal(lines.filter((line) => line.startsWith("Subagents")).length, 1);
 			if (width === 161) assert.equal(lines.filter((line) => line.includes("child-")).length, 2);
 		}
@@ -173,14 +180,88 @@ test("a large catalog remains bounded while navigating and resizing", async () =
 	for (let index = 0; index < 40; index++) {
 		const lines = rendered(component, 100);
 		assert.equal(lines.filter((line) => line.includes("child-")).length, 10);
-		assert.equal(lines.length, 17);
+		assert.ok(lines.length <= 25);
 		component.handleInput?.("\x1b[B");
 	}
 	ui.terminal.rows = 16;
-	component.invalidate();
-	assert.equal(rendered(component, 40).length, 11);
+	assert.ok(
+		rendered(component, 40).length <= 11,
+		"resize must reduce the list and preview without manual invalidation",
+	);
 	component.handleInput?.("\x1b");
 	await closed;
+});
+
+test("previews wrap long lines and preserve blank lines, tabs, and Unicode", async () => {
+	const child = record(1);
+	child.finalOutput = `First line\r\n\r\n\tIndented 中🙂\r${"longword".repeat(6)}`;
+	const { manager } = managerWith([child]);
+	const ui = harness();
+	const closed = openSubagentManager(manager, ui.ctx);
+	const component = await ui.dialog();
+	for (const width of [80, 24, 80]) {
+		const lines = rendered(component, width);
+		const preview = lines.slice(lines.indexOf("Latest:") + 1, -2);
+		assert.ok(lines.includes("Latest:"), "short output must fit without a truncation notice");
+		assert.equal(preview[0], "First line");
+		assert.equal(preview[1], "");
+		assert.ok(preview.some((line) => line.includes("   Indented 中🙂")));
+		assert.equal(preview.join("").replace(/\s/g, ""), child.finalOutput.replace(/\s/g, ""));
+	}
+	component.handleInput?.("\x1b");
+	await closed;
+});
+
+test("large output shares terminal height with the list and advertises the full transcript", async () => {
+	const records = Array.from({ length: 30 }, (_, index) => record(index));
+	for (const child of records)
+		child.finalOutput = Array.from({ length: 100 }, (_, index) => `Output ${index}`).join("\n");
+	const { manager } = managerWith(records);
+	const ui = harness();
+	const closed = openSubagentManager(manager, ui.ctx);
+	const component = await ui.dialog();
+	for (const height of [51, 24, 16, 12, 51]) {
+		ui.terminal.rows = height;
+		const lines = rendered(component, 100);
+		assert.equal(lines.filter((line) => line.startsWith("Subagents")).length, 1);
+		assert.ok(lines.at(-1)?.includes("enter actions"));
+		assert.ok(lines.length <= height - 5, "reserve space for Pi's surrounding UI");
+		const output = lines.filter((line) => line.startsWith("Output "));
+		assert.ok(output.length <= 8);
+		if (height >= 16) {
+			assert.ok(output.length >= 2, "there must be space for multiple output rows");
+			assert.ok(lines.includes(`Latest (${output.length}/100 lines · enter → View transcript):`));
+		}
+	}
+	component.handleInput?.("\x1b");
+	await closed;
+});
+
+test("live activity retains multiline assistant and user text for the preview", () => {
+	const text = "First line\nSecond line\n\nLast line";
+	assert.equal(lastActivity([{ role: "user", content: text, timestamp: 1 }]), text);
+	assert.equal(
+		lastActivity([
+			{
+				role: "assistant",
+				content: [{ type: "text", text }],
+				api: "openai-completions",
+				provider: "fixture",
+				model: "fixture",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: 1,
+			},
+		]),
+		text,
+	);
 });
 
 test("transcripts split multiline messages and errors into independently scrollable rows", async () => {

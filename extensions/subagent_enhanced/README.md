@@ -114,7 +114,7 @@ The manager opens a live catalog with status, label, model, duration, and usage.
 
 The footer shows `subagents: N running / M total` only while children are active and clears when the running count reaches zero. UI browsing does not add model tokens; only actual messages and settlement notices enter model context. The manager requires TUI mode, while model tools also work in print, JSON, and RPC modes.
 
-Labels and latest-activity previews occupy a single terminal row. The transcript viewer preserves message and error line breaks as separate scrollable rows and adjusts its page size to the terminal height.
+Labels occupy a single terminal row. Latest-activity previews preserve line breaks and wrap long lines, showing up to eight output rows as space allows. When output exceeds the preview, its heading shows the visible/total line count; choose **View transcript** from the actions menu to read the rest. The transcript viewer preserves message and error line breaks as separate scrollable rows and adjusts its page size to the terminal height.
 
 ## Agent definitions
 

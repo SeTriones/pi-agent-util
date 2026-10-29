@@ -1,5 +1,5 @@
 import { type ExtensionCommandContext, getSelectListTheme } from "@earendil-works/pi-coding-agent";
-import { type SelectItem, SelectList, truncateToWidth } from "@earendil-works/pi-tui";
+import { type SelectItem, SelectList, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SubagentManager } from "./manager.ts";
 import { formatDuration, formatTokens, formatUsage, messageText, statusGlyph } from "./render.ts";
 import type { SubagentRecord } from "./types.ts";
@@ -138,6 +138,7 @@ export async function openSubagentManager(manager: SubagentManager, ctx: Extensi
 				let rows = visibleRows(manager, expanded);
 				let selectedId = rows[0]?.record.id;
 				let list: SelectList;
+				let terminalRows = tui.terminal.rows;
 
 				const rebuild = () => {
 					rows = visibleRows(manager, expanded);
@@ -157,7 +158,9 @@ export async function openSubagentManager(manager: SubagentManager, ctx: Extensi
 							description: singleLine(`${record.id} · ${record.status} · ${metrics}`),
 						};
 					});
-					const maxVisible = Math.max(1, Math.min(10, tui.terminal.rows - 12));
+					terminalRows = tui.terminal.rows;
+					// Share the available height between the catalog and the output preview.
+					const maxVisible = Math.max(1, Math.min(10, Math.floor((terminalRows - 12) / 2)));
 					list = new SelectList(items, maxVisible, getSelectListTheme());
 					if (selectedId) {
 						list.setSelectedIndex(
@@ -182,6 +185,7 @@ export async function openSubagentManager(manager: SubagentManager, ctx: Extensi
 				});
 				return {
 					render(width: number): string[] {
+						if (terminalRows !== tui.terminal.rows) rebuild();
 						const snapshot = manager.snapshot();
 						const lines = [
 							theme.fg("accent", theme.bold("Subagents")) +
@@ -190,15 +194,18 @@ export async function openSubagentManager(manager: SubagentManager, ctx: Extensi
 							...list.render(width),
 						];
 						const current = rows.find((row) => row.record.id === selectedId)?.record;
-						if (current) {
-							lines.push(
-								"",
-								// Each render entry must occupy one physical terminal row; truncation does not remove newlines.
-								theme.fg(
-									"dim",
-									`Latest: ${singleLine(manager.activity(current.id) ?? current.agent.description)}`,
-								),
-							);
+						// Reserve four rows for the preview heading/help, plus five for Pi's surrounding UI.
+						const previewHeight = Math.max(0, Math.min(8, tui.terminal.rows - lines.length - 9));
+						if (current && previewHeight > 0) {
+							const output = manager.activity(current.id) ?? current.agent.description;
+							// Wrapping returns one array entry per terminal row, including explicit blank lines.
+							const outputLines = wrapTextWithAnsi(output.replace(/\t/g, "   "), Math.max(1, width));
+							const preview = outputLines.slice(0, previewHeight);
+							const heading =
+								outputLines.length > preview.length
+									? `Latest (${preview.length}/${outputLines.length} lines · enter → View transcript):`
+									: "Latest:";
+							lines.push("", theme.fg("dim", heading), ...preview.map((line) => theme.fg("dim", line)));
 						}
 						lines.push("", theme.fg("dim", "up/down select · enter actions · escape close"));
 						return lines.map((line) => truncateToWidth(line, width));
